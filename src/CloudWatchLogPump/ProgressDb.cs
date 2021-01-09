@@ -13,6 +13,7 @@ namespace CloudWatchLogPump
     public class ProgressDb
     {
         private readonly string _basePath;
+        private readonly bool _storageEnabled;
         private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
         private readonly Regex _deserializeRegex = new Regex("^([^|]+)\\|([^|]+)\\|(.*)$");
         private readonly InstantPattern _instantPattern = InstantPattern.General;
@@ -22,6 +23,10 @@ namespace CloudWatchLogPump
         public ProgressDb(string basePath)
         {
             _basePath = basePath;
+            _storageEnabled = !string.IsNullOrWhiteSpace(_basePath);
+
+            if (_storageEnabled && !Directory.Exists(_basePath))
+                Directory.CreateDirectory(_basePath);
         }
 
         public JobProgress Get(string key)
@@ -31,13 +36,17 @@ namespace CloudWatchLogPump
 
         public async Task Set(string key, JobProgress progress)
         {
-            var filePath = GetFilePath(key);
-            var text = Serialize(progress);
-            
             await _semaphore.WaitAsync();
             try
             {
-                await File.WriteAllTextAsync(filePath, text);
+                _progresses[key] = progress;
+
+                if (_storageEnabled)
+                {
+                    var filePath = GetFilePath(key);
+                    var text = Serialize(progress);
+                    await File.WriteAllTextAsync(filePath, text);
+                }
             }
             finally
             {
@@ -47,12 +56,18 @@ namespace CloudWatchLogPump
 
         public async Task LoadAll(IEnumerable<string> keys)
         {
+            if (!_storageEnabled)
+                return;
+            
             foreach (var key in keys)
                 await Load(key);
         }
 
         public async Task<JobProgress> Load(string key)
         {
+            if (!_storageEnabled)
+                return null;
+            
             var filePath = GetFilePath(key);
             
             await _semaphore.WaitAsync();

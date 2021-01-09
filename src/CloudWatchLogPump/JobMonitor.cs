@@ -17,7 +17,7 @@ namespace CloudWatchLogPump
 
         public void StartAll()
         {
-            DependencyContext.Configuration.Subscriptions.ForEach(s => Start(s));
+            DependencyContext.Configuration.Subscriptions.ForEach(Start);
         }
         
         public void Start(SubscriptionConfiguration subscription)
