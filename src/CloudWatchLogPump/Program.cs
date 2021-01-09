@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using CloudWatchLogPump.Configuration;
 using CloudWatchLogPump.Extensions;
 using Microsoft.Extensions.Configuration;
@@ -27,7 +28,7 @@ namespace CloudWatchLogPump
             Log.Logger.Debug($"Configuration: {DependencyContext.Configuration.Dump()}");
             ValidateConfiguration();
 
-            SetupProgressDb();
+            SetupProgressDb().GetAwaiter().GetResult();
             SetupMonitor();
             DependencyContext.Monitor.StartAll();
 
@@ -93,10 +94,10 @@ namespace CloudWatchLogPump
             throw new NotImplementedException();
         }
 
-        private static void SetupProgressDb()
+        private static async Task SetupProgressDb()
         {
-            DependencyContext.ProgressDb = new ProgressDb();
-            DependencyContext.ProgressDb.LoadAll(DependencyContext.Configuration.Subscriptions.Select(s => s.Id));
+            DependencyContext.ProgressDb = new ProgressDb(DependencyContext.Configuration.ProgressDbPath);
+            await DependencyContext.ProgressDb.LoadAll(DependencyContext.Configuration.Subscriptions.Select(s => s.Id));
         }
     }
 }
