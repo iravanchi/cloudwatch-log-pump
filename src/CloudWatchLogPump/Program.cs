@@ -1,75 +1,102 @@
 ﻿using System;
+using System.Globalization;
+using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
-using Amazon;
-using Amazon.CloudWatchLogs;
-using Amazon.CloudWatchLogs.Model;
+using CloudWatchLogPump.Configuration;
+using CloudWatchLogPump.Extensions;
+using Microsoft.Extensions.Configuration;
+using NodaTime;
+using Serilog;
+using Serilog.Events;
+using Serilog.Sinks.SystemConsole.Themes;
 
 namespace CloudWatchLogPump
 {
     class Program
     {
-        static async Task Main(string[] args)
+        static void Main(string[] args)
         {
-            await DescribeSubscriptionFilters();
-        }
-
-        public static async Task DescribeSubscriptionFilters()
-        {
-            IAmazonCloudWatchLogs client = new AmazonCloudWatchLogsClient(RegionEndpoint.CACentral1);
-
-            string nextToken = null;
+            var configFilePath = "appsettings.json";
+            if (args.Length > 0)
+                configFilePath = args[0];
             
-            do
+            SetupConfiguration(configFilePath);
+            SetupLogging();
+            
+            Log.Logger.Information("Application started.");
+            Log.Logger.Debug($"Configuration: {DependencyContext.Configuration.Dump()}");
+            ValidateConfiguration();
+
+            SetupProgressDb();
+            SetupMonitor();
+            DependencyContext.Monitor.StartAll();
+
+            Console.ReadLine();
+            DependencyContext.Monitor.StopAll();
+        }
+        
+        private static void SetupConfiguration(string configFilePath)
+        {
+            var builder = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile(configFilePath, false);
+
+            var config = builder.Build();
+            DependencyContext.Configuration = config.Get<RootConfiguration>();
+        }
+        
+        private static void SetupLogging()
+        {
+            var consoleLogLevel = DependencyContext.Configuration.EnableDebugConsoleLog
+                ? LogEventLevel.Debug
+                : LogEventLevel.Information;
+            
+            var maxSubscriptionIdLength = DependencyContext.Configuration.Subscriptions.Max(s => s.Id.Length);
+            string logMessageTemplate = $"[{{Timestamp:HH:mm:ss}} {{Level:u3}} {{SubscriptionId,-{maxSubscriptionIdLength}}}] {{Message:lj}}{{NewLine}}{{Exception}}";
+
+            var config = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.Console(consoleLogLevel, logMessageTemplate, theme: AnsiConsoleTheme.Code)
+                .Destructure.ByTransforming<LocalDate>(ld => ld.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+
+            if (!string.IsNullOrWhiteSpace(DependencyContext.Configuration.LogFolderPath))
             {
-                var logs = await client.FilterLogEventsAsync(new FilterLogEventsRequest()
-                {
-                    LogGroupName = "log_group_name",
-                    StartTime = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeMilliseconds(),
-                    NextToken = nextToken
-                });
-                
-                logs.Events.ForEach(e =>
-                {
-                });
+                config = config.WriteTo.File(
+                    Path.Combine(DependencyContext.Configuration.LogFolderPath, "info-.log"),
+                    LogEventLevel.Information, 
+                    rollingInterval: RollingInterval.Day);
 
-                if (logs.Events != null && logs.Events.Any())
-                    Console.WriteLine($"Received {logs.Events.Count} events " +
-                                      $"from {DateTimeOffset.FromUnixTimeMilliseconds(logs.Events[0].Timestamp):s} " +
-                                      $"to {DateTimeOffset.FromUnixTimeMilliseconds(logs.Events[^1].Timestamp):s} ");
-                
-                nextToken = logs.NextToken;
-
-            } while (!string.IsNullOrWhiteSpace(nextToken));
+                if (DependencyContext.Configuration.EnableDebugFileLog)
+                {
+                    config = config.WriteTo.File(
+                        Path.Combine(DependencyContext.Configuration.LogFolderPath, "debug-.log"),
+                        LogEventLevel.Debug, 
+                        rollingInterval: RollingInterval.Day);
+                }
+            }
+            
+            var logger = config.CreateLogger();
+            Log.Logger = logger;
         }
 
-        private static async Task UseDescribeLogStreams(IAmazonCloudWatchLogs client)
+        private static void SetupMonitor()
         {
-            string nextToken = null;
+            DependencyContext.Monitor = new JobMonitor();
+        }
+        
+        private static void ValidateConfiguration()
+        {
+            // Check minimum one iteration
+            // Check iteration start/stop specified in one format only
+            // Check iteration ID for invalid characters
+            
+            throw new NotImplementedException();
+        }
 
-            for (int i = 0; i < 5; i++)
-            {
-                var describeLogStreamsRequest = new DescribeLogStreamsRequest()
-                {
-                    LogGroupName = "log_group_name",
-                    NextToken = nextToken,
-                    OrderBy = OrderBy.LastEventTime,
-                    Descending = true
-                };
-
-                var describeLogStreamsResult = await client.DescribeLogStreamsAsync(describeLogStreamsRequest);
-                foreach (var stream in describeLogStreamsResult.LogStreams)
-                    Console.WriteLine(stream.LogStreamName);
-
-                Console.WriteLine();
-                Console.WriteLine();
-                Console.WriteLine();
-
-                if (string.IsNullOrWhiteSpace(describeLogStreamsResult.NextToken))
-                    break;
-
-                nextToken = describeLogStreamsResult.NextToken;
-            }
+        private static void SetupProgressDb()
+        {
+            DependencyContext.ProgressDb = new ProgressDb();
+            DependencyContext.ProgressDb.LoadAll(DependencyContext.Configuration.Subscriptions.Select(s => s.Id));
         }
     }
 }
