@@ -1,10 +1,12 @@
-﻿using CloudWatchLogPump.Configuration;
+﻿using System.Collections.Generic;
+using CloudWatchLogPump.Configuration;
 
 namespace CloudWatchLogPump
 {
     public class DependencyContext
     {
         public static RootConfiguration Configuration { get; set; }
+        public static Dictionary<string, CalculatedSubscriptionConfiguration> Subscriptions { get; set; }
         public static JobMonitor Monitor { get; set; }
         public static ProgressDb ProgressDb { get; set; }
     }
