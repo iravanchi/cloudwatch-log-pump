@@ -1,17 +1,14 @@
 ﻿using System;
 using System.Threading.Tasks;
 using CloudWatchLogPump.Extensions;
-using CloudWatchLogPump.Model;
 using NodaTime;
 
 namespace CloudWatchLogPump
 {
     public class JobRunner
     {
-        private const int WaitOnIdle = 5 * 1000;
-        private const int WaitOnBusy = 0;
-        private const int WaitOnError = 30 * 1000;
-        private const int WaitOnException = 5 * 60 * 1000;
+        private const int WaitOnException = 2 * 60 * 1000;
+        private const int MinWaitOnIdle = 500;
         private readonly JobRunnerContext _context;
         
         private TaskCompletionSource<bool> _runningTask;
@@ -89,21 +86,17 @@ namespace CloudWatchLogPump
                     var startInstant = InstantUtils.Now;
                     UpdateLiveliness();
 
-                    JobIterationResult iterationResult;
-
                     try
                     {
                         var currentProgress = DependencyContext.ProgressDb.Get(_context.Id);
                         _context.Logger.Debug("Current progress: {@Progress}", currentProgress);
                         
                         var iteration = new JobIteration(_context, currentProgress);
-                        iterationResult = await iteration.Run();
+                        var thereIsMore = await iteration.Run();
                         
                         var newProgress = iteration.Progress;
 
-                        _context.Logger.Debug("Iteration completed as {IterationResults}, new progress: {@Progress}", 
-                            iterationResult, newProgress);
-
+                        _context.Logger.Debug("Iteration completed. There is more: {ThereIsMore}, new progress: {@Progress}", thereIsMore, newProgress);
                         await DependencyContext.ProgressDb.Set(_context.Id, newProgress);
                         
                         var finishInstant = InstantUtils.Now;
@@ -111,17 +104,26 @@ namespace CloudWatchLogPump
                     
                         _context.Logger.Information("Iteration done: read {RecordCount,5} records in {ReadTime,4} ms, waited {WaitTime,4} ms, written in {WriteTime,4} ms. Total {TotalTime,5} ms {TotalSize,6} bytes",
                             iteration.RecordCount, iteration.ReadTimeMillis, iteration.WaitTimeMillis, iteration.WriteTimeMillis, totalTimeMillis, iteration.SizeBytes);
+
+                        if (!thereIsMore)
+                        {
+                            var waitTarget = InstantUtils.Now.Plus(Duration.FromMilliseconds(MinWaitOnIdle));
+                            var nextIterationDue = newProgress.NextIterationEnd.Plus(
+                                Duration.FromSeconds(_context.ClockSkewProtectionSeconds));
+                            
+                            if (waitTarget < nextIterationDue)
+                                waitTarget = nextIterationDue;
+
+                            _context.Logger.Debug("Waiting till {WaitTarget} for next iteration", waitTarget);
+                            await WaitTill(waitTarget);
+                        }
                     }
                     catch (Exception e)
                     {
-                        _context.Logger.Warning(e, "Job iteration threw exception");
-                        iterationResult = JobIterationResult.Exception;
+                        var exceptionWaitTarget = InstantUtils.Now.Plus(Duration.FromMilliseconds(WaitOnException));
+                        _context.Logger.Warning(e, "Job iteration threw exception. Waiting till {WaitTarget} to continue", exceptionWaitTarget);
+                        await WaitTill(exceptionWaitTarget);
                     }
-
-                    var waitTarget = CalculateWaitTarget(iterationResult);
-
-                    _context.Logger.Debug("Waiting till {WaitTarget} for next iteration", waitTarget);
-                    await WaitTill(waitTarget);
                 }
                 
                 _context.Logger.Information("Job stop succeeded, exiting job root");
@@ -142,20 +144,6 @@ namespace CloudWatchLogPump
             }
         }
         
-        private static Instant CalculateWaitTarget(JobIterationResult result)
-        {
-            int wait = result switch
-            {
-                JobIterationResult.Idle => WaitOnIdle,
-                JobIterationResult.ThereIsMore => WaitOnBusy,
-                JobIterationResult.Error => WaitOnError,
-                JobIterationResult.Exception => WaitOnException,
-                _ => throw new ArgumentOutOfRangeException(nameof(result), result, null)
-            };
-
-            return InstantUtils.Now.Plus(Duration.FromMilliseconds(wait));
-        }
-
         private void UpdateLiveliness()
         {
             _lastLoop = InstantUtils.Now;
@@ -176,6 +164,5 @@ namespace CloudWatchLogPump
             
             _context.Logger.Debug("Suspending wait because of stop request");
         }
-
     }
 }

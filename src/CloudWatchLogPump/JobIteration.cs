@@ -31,11 +31,11 @@ namespace CloudWatchLogPump
             Progress = currentProgress;
         }
 
-        public async Task<JobIterationResult> Run()
+        public async Task<bool> Run()
         {
             CalculateProgressBeforeRead();
             if (!IsRunnable(Progress))
-                return JobIterationResult.Idle;
+                return false;
 
             await ReadRecords();
             
@@ -51,7 +51,7 @@ namespace CloudWatchLogPump
             }
 
             Progress = nextProgress;
-            return IsRunnable(nextProgress) ? JobIterationResult.ThereIsMore : JobIterationResult.Idle;
+            return IsRunnable(nextProgress);
         }
         
         private void CalculateProgressBeforeRead()
