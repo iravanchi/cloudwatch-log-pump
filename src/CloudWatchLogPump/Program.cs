@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using CloudWatchLogPump.Configuration;
 using CloudWatchLogPump.Extensions;
 using NodaTime;
+using NodaTime.Text;
 using Serilog;
 using Serilog.Events;
 using Serilog.Sinks.SystemConsole.Themes;
@@ -69,7 +70,12 @@ namespace CloudWatchLogPump
                         rollingInterval: RollingInterval.Day);
                 }
             }
-            
+
+            config = config
+                .Destructure.ByTransforming<LocalDate>(ld => ld.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+                .Destructure.ByTransforming<Instant>(i => InstantPattern.General.Format(i))
+                .Destructure.ByTransforming<Duration>(d => DurationPattern.Roundtrip.Format(d));
+
             var logger = config.CreateLogger();
             Log.Logger = logger;
         }
