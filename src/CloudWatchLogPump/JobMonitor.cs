@@ -68,20 +68,20 @@ namespace CloudWatchLogPump
         {
             if (!_runners.TryGetValue(subscription.Id, out var runner))
             {
-                _logger.Information("No JobRunner for {SubscriptionId} yet, starting one.");
+                _logger.Information("No JobRunner for {SubscriptionId} yet, starting one.", subscription.Id);
                 RecycleRunner(subscription);
                 return;
             }
 
             if (!runner.Running && !_stopping)
             {
-                _logger.Warning("JobRunner for {SubscriptionId} appears to be stopped. Recycling.");
+                _logger.Warning("JobRunner for {SubscriptionId} appears to be stopped. Recycling.", subscription.Id);
                 RecycleRunner(subscription);
             }
 
             if (runner.MillisSinceLastLoop > Timing.Monitor.SecondsBeforeConsiderRunningJobUnresponsive * 1000)
             {
-                _logger.Warning("JobRunner for {SubscriptionId} is not responding. Recycling.");
+                _logger.Warning("JobRunner for {SubscriptionId} is not responding. Recycling.", subscription.Id);
                 RecycleRunner(subscription);
             }
         }
