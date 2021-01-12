@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Amazon.CloudWatchLogs.Model;
@@ -194,7 +195,7 @@ namespace CloudWatchLogPump
 
                 var beforeWrite = InstantUtils.Now;
                 var json = JsonSerializer.Serialize(batch);
-                var postResult = await _context.HttpClient.PostAsync(_context.TargetUrl, new StringContent(json));
+                var postResult = await _context.HttpClient.PostAsync(_context.TargetUrl, new StringContent(json, Encoding.UTF8, "application/json"));
                 var afterWrite = InstantUtils.Now;
                 WriteTimeMillis += (int) afterWrite.Minus(beforeWrite).TotalMilliseconds;
 
