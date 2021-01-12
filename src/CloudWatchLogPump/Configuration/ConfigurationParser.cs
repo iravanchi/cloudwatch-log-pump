@@ -10,6 +10,7 @@ using CloudWatchLogPump.Extensions;
 using Microsoft.Extensions.Configuration;
 using NodaTime;
 using NodaTime.Text;
+using Serilog;
 
 namespace CloudWatchLogPump.Configuration
 {
@@ -141,6 +142,7 @@ namespace CloudWatchLogPump.Configuration
                 TargetMaxBatchSize = config.TargetMaxBatchSize,
                 StartInstant = ParseAbsoluteOrRelativeTime(config.StartTimeIso, config.StartTimeSecondsAgo) ?? InstantUtils.Now,
                 EndInstant = ParseAbsoluteOrRelativeTime(config.EndTimeIso, config.EndTimeSecondsAgo),
+                Logger = Log.Logger.ForContext("SubscriptionId", config.Id),
                 AwsClient = new AmazonCloudWatchLogsClient(RegionEndpoint.GetBySystemName(config.AwsRegion)),
                 HttpClient = new HttpClient(),
                 Random = new Random()

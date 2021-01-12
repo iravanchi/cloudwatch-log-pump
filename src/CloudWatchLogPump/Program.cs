@@ -24,7 +24,7 @@ namespace CloudWatchLogPump
             
             SetupLogging();
             Log.Logger.Information("Application started.");
-            Log.Logger.Debug($"Configuration: {DependencyContext.Configuration.Dump()}");
+            Log.Logger.Debug("Loaded configuration: \n{ConfigurationDump}", DependencyContext.Configuration.Dump());
             
             ConfigurationParser.ValidateConfiguration();
             ConfigurationParser.CoerceConfiguration();

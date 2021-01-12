@@ -1,11 +1,8 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Amazon;
-using Amazon.CloudWatchLogs;
 using CloudWatchLogPump.Extensions;
 using CloudWatchLogPump.Model;
 using NodaTime;
-using Serilog;
 
 namespace CloudWatchLogPump
 {
@@ -15,7 +12,6 @@ namespace CloudWatchLogPump
         private const int WaitOnBusy = 0;
         private const int WaitOnError = 30 * 1000;
         private const int WaitOnException = 5 * 60 * 1000;
-        private readonly ILogger _logger;
         private readonly JobRunnerContext _context;
         
         private TaskCompletionSource<bool> _runningTask;
@@ -30,7 +26,6 @@ namespace CloudWatchLogPump
         public JobRunner(JobRunnerContext context)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
-            _logger = Log.Logger.ForContext<JobRunner>().ForContext("SubscriptionId", context.Id);
             _runningTask = null;
             _stoppingTask = null;
             _lastLoop = InstantUtils.Now;
@@ -40,11 +35,11 @@ namespace CloudWatchLogPump
         {
             if (Running)
             {
-                _logger.Warning("Job is already running when requested to start");
+                _context.Logger.Warning("Job is already running when requested to start");
                 return _runningTask.Task;
             }
 
-            _logger.Information("Start requested");
+            _context.Logger.Information("Start requested");
             
             // TODO: Concurrency
             _runningTask = new TaskCompletionSource<bool>();
@@ -60,24 +55,24 @@ namespace CloudWatchLogPump
         {
             if (!Running)
             {
-                _logger.Warning("Job is already stopped when requested to stop");
+                _context.Logger.Warning("Job is already stopped when requested to stop");
                 return Task.FromResult(true);
             }
 
             if (_stoppingTask != null)
             {
-                _logger.Warning("Stop is already requested, ignoring duplicate stop request");
+                _context.Logger.Warning("Stop is already requested, ignoring duplicate stop request");
                 return _stoppingTask.Task;
             }
             
-            _logger.Information("Stop requested");
+            _context.Logger.Information("Stop requested");
             _stoppingTask = new TaskCompletionSource<bool>();
             return _stoppingTask?.Task;
         }
 
         private async void JobRoot()
         {
-            _logger.Debug("Runner entry");
+            _context.Logger.Debug("Runner entry");
 
             try
             {
@@ -90,7 +85,7 @@ namespace CloudWatchLogPump
                             break;
                     }
                     
-                    _logger.Debug("Starting new loop");
+                    _context.Logger.Debug("Starting new loop");
                     var startInstant = InstantUtils.Now;
                     UpdateLiveliness();
 
@@ -99,14 +94,14 @@ namespace CloudWatchLogPump
                     try
                     {
                         var currentProgress = DependencyContext.ProgressDb.Get(_context.Id);
-                        _logger.Debug("Current progress: {Progress}", currentProgress);
+                        _context.Logger.Debug("Current progress: {@Progress}", currentProgress);
                         
                         var iteration = new JobIteration(_context, currentProgress);
                         iterationResult = await iteration.Run();
                         
                         var newProgress = iteration.Progress;
 
-                        _logger.Debug("Iteration completed as {IterationResults}, new progress: {Progress}", 
+                        _context.Logger.Debug("Iteration completed as {IterationResults}, new progress: {@Progress}", 
                             iterationResult, newProgress);
 
                         await DependencyContext.ProgressDb.Set(_context.Id, newProgress);
@@ -114,27 +109,27 @@ namespace CloudWatchLogPump
                         var finishInstant = InstantUtils.Now;
                         var totalTimeMillis = (int) finishInstant.Minus(startInstant).TotalMilliseconds;
                     
-                        _logger.Information("Iteration done: read {RecordCount,5} records in {ReadTime,4} ms, waited {WaitTime,4} ms, written in {WriteTime,4} ms. Total {TotalTime,5} ms {TotalSize,6} bytes",
+                        _context.Logger.Information("Iteration done: read {RecordCount,5} records in {ReadTime,4} ms, waited {WaitTime,4} ms, written in {WriteTime,4} ms. Total {TotalTime,5} ms {TotalSize,6} bytes",
                             iteration.RecordCount, iteration.ReadTimeMillis, iteration.WaitTimeMillis, iteration.WriteTimeMillis, totalTimeMillis, iteration.SizeBytes);
                     }
                     catch (Exception e)
                     {
-                        _logger.Warning(e, "Job iteration threw exception");
+                        _context.Logger.Warning(e, "Job iteration threw exception");
                         iterationResult = JobIterationResult.Exception;
                     }
 
                     var waitTarget = CalculateWaitTarget(iterationResult);
 
-                    _logger.Debug("Waiting till {WaitTarget} for next iteration", waitTarget);
+                    _context.Logger.Debug("Waiting till {WaitTarget} for next iteration", waitTarget);
                     await WaitTill(waitTarget);
                 }
                 
-                _logger.Information("Job stop succeeded, exiting job root");
+                _context.Logger.Information("Job stop succeeded, exiting job root");
                 _stoppingTask?.SetResult(true);
             }
             catch (Exception e)
             {
-                _logger.Error(e, "JobRunner terminated by an exception");
+                _context.Logger.Error(e, "JobRunner terminated by an exception");
                 TerminatedBy = e;
             }
             finally
@@ -179,7 +174,7 @@ namespace CloudWatchLogPump
                 await Task.Delay(Math.Min(1000, remaining));
             }
             
-            _logger.Debug("Suspending wait because of stop request");
+            _context.Logger.Debug("Suspending wait because of stop request");
         }
 
     }

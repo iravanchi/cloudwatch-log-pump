@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CloudWatchLogPump.Model;
 using NodaTime.Text;
+using Serilog;
 
 namespace CloudWatchLogPump
 {
@@ -73,6 +74,8 @@ namespace CloudWatchLogPump
             await _semaphore.WaitAsync();
             try
             {
+                Log.Logger.Debug("Loading progress of {SubscriptionId} from {ProgressFilePath}", key, filePath);
+                
                 if (!File.Exists(filePath)) 
                     return null;
             
@@ -87,6 +90,7 @@ namespace CloudWatchLogPump
                 _progresses[key] = progress
                                    ?? throw new ApplicationException($"The contents of file {filePath} does not match the expected input format for progressDb");
 
+                Log.Logger.Debug("Progress of {SubscriptionId} is deserialized to {@Progress}", key, progress);
                 return progress;
             }
             finally

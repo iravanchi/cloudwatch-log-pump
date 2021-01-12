@@ -141,6 +141,8 @@ namespace CloudWatchLogPump
                 Limit = _context.ReadMaxBatchSize
             };
 
+            _context.Logger.Debug("Calling AWS API with input {@Request}", request);
+
             _readResponse = await _context.AwsClient.FilterLogEventsAsync(request);
             if (_readResponse.HttpStatusCode != HttpStatusCode.OK)
                 throw new ApplicationException("AWS Service call did not return OK status code");
@@ -188,12 +190,17 @@ namespace CloudWatchLogPump
             
             while (true)
             {
+                _context.Logger.Debug("Calling HTTP target with a batch of {BatchSize} messages", batch.Count);
+
                 var beforeWrite = InstantUtils.Now;
                 var json = JsonSerializer.Serialize(batch);
                 var postResult = await _context.HttpClient.PostAsync(_context.TargetUrl, new StringContent(json));
                 var afterWrite = InstantUtils.Now;
                 WriteTimeMillis += (int) afterWrite.Minus(beforeWrite).TotalMilliseconds;
 
+                _context.Logger.Debug("HTTP Call ended with status code {HttpStatus} {HttpStatusReason}", 
+                    postResult.StatusCode, postResult.ReasonPhrase);
+                
                 if (postResult.IsSuccessStatusCode) 
                     return;
 
@@ -211,7 +218,8 @@ namespace CloudWatchLogPump
         private async Task WaitRandom(int maxWaitMillis)
         {
             var waitMillis = _context.Random.Next(maxWaitMillis);
-            
+            _context.Logger.Debug("Waiting before retry for {WaitTime} ms", waitMillis);
+
             var beforeWait = InstantUtils.Now;
             await Task.Delay(waitMillis);
             var afterWait = InstantUtils.Now;

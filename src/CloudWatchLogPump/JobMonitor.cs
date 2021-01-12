@@ -1,7 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading.Tasks;
-using CloudWatchLogPump.Configuration;
 using Serilog;
 
 namespace CloudWatchLogPump
@@ -21,9 +20,9 @@ namespace CloudWatchLogPump
                 Start(subscription);
         }
         
-        public void Start(JobRunnerContext subscription)
+        private void Start(JobRunnerContext subscription)
         {
-            Log.Logger.Information("Starting all subscriptions");
+            Log.Logger.Information("Starting subscription {SubscriptionId}", subscription.Id);
             
             var runner = GetOrCreateRunner(subscription);
             runner.Start(null);
