@@ -7,8 +7,6 @@ namespace CloudWatchLogPump
 {
     public class JobRunner
     {
-        private const int WaitOnException = 2 * 60 * 1000;
-        private const int MinWaitOnIdle = 500;
         private readonly JobRunnerContext _context;
         
         private TaskCompletionSource<bool> _runningTask;
@@ -107,7 +105,7 @@ namespace CloudWatchLogPump
 
                         if (!thereIsMore)
                         {
-                            var waitTarget = InstantUtils.Now.Plus(Duration.FromMilliseconds(MinWaitOnIdle));
+                            var waitTarget = InstantUtils.Now.Plus(Duration.FromMilliseconds(Timing.Runner.MinWaitMillisOnIdle));
                             var nextIterationDue = newProgress.NextIterationEnd.Plus(
                                 Duration.FromSeconds(_context.ClockSkewProtectionSeconds));
                             
@@ -120,7 +118,7 @@ namespace CloudWatchLogPump
                     }
                     catch (Exception e)
                     {
-                        var exceptionWaitTarget = InstantUtils.Now.Plus(Duration.FromMilliseconds(WaitOnException));
+                        var exceptionWaitTarget = InstantUtils.Now.Plus(Duration.FromMilliseconds(Timing.Runner.WaitMillisOnException));
                         _context.Logger.Warning(e, "Job iteration threw exception. Waiting till {WaitTarget} to continue", exceptionWaitTarget);
                         await WaitTill(exceptionWaitTarget);
                     }

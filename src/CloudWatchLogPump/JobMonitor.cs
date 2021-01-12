@@ -8,9 +8,6 @@ namespace CloudWatchLogPump
 {
     public class JobMonitor
     {
-        private const int MillisToConsiderRunningJobUnresponsive = 20 * 60 * 1000;
-        private const int MillisBetweenReCheckingJobRunners = 30 * 1000;
-
         private readonly ILogger _logger = Log.Logger.ForContext<JobMonitor>();
         private readonly ConcurrentDictionary<string, JobRunner> _runners;
         private volatile bool _stopping; // TODO Using a cancellation token makes more sense!
@@ -57,11 +54,13 @@ namespace CloudWatchLogPump
                     if (_stopping)
                         return;
                 }
-                
-                await Task.Delay(MillisBetweenReCheckingJobRunners);
 
-                if (_stopping)
-                    return;
+                for (var i = 0; i < Timing.Monitor.SecondsBetweenReCheckingJobRunners; i++)
+                {
+                    await Task.Delay(1000);
+                    if (_stopping)
+                        return;
+                }
             }
         }
 
@@ -79,8 +78,8 @@ namespace CloudWatchLogPump
                 _logger.Warning("JobRunner for {SubscriptionId} appears to be stopped. Recycling.");
                 RecycleRunner(subscription);
             }
-            
-            if (runner.MillisSinceLastLoop > MillisToConsiderRunningJobUnresponsive)
+
+            if (runner.MillisSinceLastLoop > Timing.Monitor.SecondsBeforeConsiderRunningJobUnresponsive * 1000)
             {
                 _logger.Warning("JobRunner for {SubscriptionId} is not responding. Recycling.");
                 RecycleRunner(subscription);

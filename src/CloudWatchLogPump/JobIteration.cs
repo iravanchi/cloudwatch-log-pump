@@ -184,11 +184,7 @@ namespace CloudWatchLogPump
 
         private async Task SendBatch(List<TargetEventModel> batch)
         {
-            const int maxWaitBaseMillis = 2000;
-            const int maxWaitMultiplier = 4;
-            const int maxWaitCoefficientUpperLimit = maxWaitMultiplier * maxWaitMultiplier * maxWaitMultiplier;
-            
-            var maxWaitCoefficient = 1;
+            var waitRange = Timing.IterationTargetCall.InitialWaitRangeMillis;
             
             while (true)
             {
@@ -209,11 +205,11 @@ namespace CloudWatchLogPump
                 if (!postResult.StatusCode.IsRetryable())
                     throw new ApplicationException("Target write failed with status code " + postResult.StatusCode);
                 
-                if (maxWaitCoefficient > maxWaitCoefficientUpperLimit)
+                if (waitRange > Timing.IterationTargetCall.MaxWaitRangeMillis)
                     throw new ApplicationException("Target write failed after too many retries, with status code " + postResult.StatusCode);
                 
-                await WaitRandom(maxWaitCoefficient * maxWaitBaseMillis);
-                maxWaitCoefficient *= maxWaitMultiplier;
+                await WaitRandom(waitRange);
+                waitRange *= Timing.IterationTargetCall.WaitRangeMultiplier;
             }
         }
 
