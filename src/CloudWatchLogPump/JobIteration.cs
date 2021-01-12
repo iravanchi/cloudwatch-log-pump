@@ -142,8 +142,10 @@ namespace CloudWatchLogPump
             };
 
             _context.Logger.Debug("Calling AWS API with input {@Request}", request);
-
             _readResponse = await _context.AwsClient.FilterLogEventsAsync(request);
+            _context.Logger.Debug("AWS API returned {HttpStatusCode} with {RecordCount} records, {ResponseSize} bytes", 
+                _readResponse.HttpStatusCode, _readResponse.Events.Count, _readResponse.ContentLength);
+            
             if (_readResponse.HttpStatusCode != HttpStatusCode.OK)
                 throw new ApplicationException("AWS Service call did not return OK status code");
 
