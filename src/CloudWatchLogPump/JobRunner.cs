@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
-using CloudWatchLogPump.Configuration;
+using Amazon;
+using Amazon.CloudWatchLogs;
 using CloudWatchLogPump.Extensions;
 using CloudWatchLogPump.Model;
 using NodaTime;
@@ -15,7 +16,7 @@ namespace CloudWatchLogPump
         private const int WaitOnError = 30 * 1000;
         private const int WaitOnException = 5 * 60 * 1000;
         private readonly ILogger _logger;
-        private readonly SubscriptionConfiguration _subscription;
+        private readonly JobRunnerContext _context;
         
         private TaskCompletionSource<bool> _runningTask;
         private TaskCompletionSource<bool> _stoppingTask;
@@ -26,10 +27,10 @@ namespace CloudWatchLogPump
         public Exception TerminatedBy { get; private set; }
         public double MillisSinceLastLoop => InstantUtils.Now.Minus(_lastLoop).TotalSeconds;
         
-        public JobRunner(SubscriptionConfiguration subscription)
+        public JobRunner(JobRunnerContext context)
         {
-            _subscription = subscription ?? throw new ArgumentNullException(nameof(subscription));
-            _logger = Log.Logger.ForContext<JobRunner>().ForContext("SubscriptionId", subscription.Id);
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _logger = Log.Logger.ForContext<JobRunner>().ForContext("SubscriptionId", context.Id);
             _runningTask = null;
             _stoppingTask = null;
             _lastLoop = InstantUtils.Now;
@@ -77,7 +78,6 @@ namespace CloudWatchLogPump
         private async void JobRoot()
         {
             _logger.Debug("Runner entry");
-            // TODO: Set initial value in progressDb
 
             try
             {
@@ -98,19 +98,24 @@ namespace CloudWatchLogPump
 
                     try
                     {
-                        var currentProgress = DependencyContext.ProgressDb.Get(_subscription.Id);
+                        var currentProgress = DependencyContext.ProgressDb.Get(_context.Id);
                         _logger.Debug("Current progress: {Progress}", currentProgress);
                         
-                        var iteration = new JobIteration(_subscription, currentProgress);
-                        await iteration.Run();
+                        var iteration = new JobIteration(_context, currentProgress);
+                        iterationResult = await iteration.Run();
                         
-                        iterationResult = iteration.Result;
                         var newProgress = iteration.Progress;
 
                         _logger.Debug("Iteration completed as {IterationResults}, new progress: {Progress}", 
                             iterationResult, newProgress);
 
-                        await DependencyContext.ProgressDb.Set(_subscription.Id, newProgress);
+                        await DependencyContext.ProgressDb.Set(_context.Id, newProgress);
+                        
+                        var finishInstant = InstantUtils.Now;
+                        var totalTimeMillis = (int) finishInstant.Minus(startInstant).TotalMilliseconds;
+                    
+                        _logger.Information("Iteration done: read {RecordCount,5} records in {ReadTime,4} ms, waited {WaitTime,4} ms, written in {WriteTime,4} ms. Total {TotalTime,5} ms {TotalSize,6} bytes",
+                            iteration.RecordCount, iteration.ReadTimeMillis, iteration.WaitTimeMillis, iteration.WriteTimeMillis, totalTimeMillis, iteration.SizeBytes);
                     }
                     catch (Exception e)
                     {
@@ -118,19 +123,13 @@ namespace CloudWatchLogPump
                         iterationResult = JobIterationResult.Exception;
                     }
 
-                    var finishInstant = InstantUtils.Now;
-                    var totalTimeMillis = (int) finishInstant.Minus(startInstant).TotalMilliseconds;
-                    
-                    // TODO: Log read/write/total times
-                    _logger.Information("Iteration complete");
-
                     var waitTarget = CalculateWaitTarget(iterationResult);
 
                     _logger.Debug("Waiting till {WaitTarget} for next iteration", waitTarget);
                     await WaitTill(waitTarget);
                 }
                 
-                _logger.Information("Job stop succeeded, exiting background task root");
+                _logger.Information("Job stop succeeded, exiting job root");
                 _stoppingTask?.SetResult(true);
             }
             catch (Exception e)
@@ -177,7 +176,7 @@ namespace CloudWatchLogPump
                 if (remaining <= 0)
                     return;
 
-                await Task.Delay(Math.Min(3000, remaining));
+                await Task.Delay(Math.Min(1000, remaining));
             }
             
             _logger.Debug("Suspending wait because of stop request");

@@ -2,7 +2,10 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text.RegularExpressions;
+using Amazon;
+using Amazon.CloudWatchLogs;
 using CloudWatchLogPump.Extensions;
 using Microsoft.Extensions.Configuration;
 using NodaTime;
@@ -54,6 +57,9 @@ namespace CloudWatchLogPump.Configuration
             if (string.IsNullOrWhiteSpace(config.TargetUrl))
                 throw new ArgumentException($"Subscription '{config.Id}' - targetUrl is required to be specified");
 
+            if (string.IsNullOrWhiteSpace(config.AwsRegion))
+                throw new ArgumentException($"Subscription '{config.Id}' - awsRegion is required to be specified");
+
             if (string.IsNullOrWhiteSpace(config.LogGroupName))
                 throw new ArgumentException($"Subscription '{config.Id}' - logGroupName is required to be specified");
 
@@ -70,7 +76,7 @@ namespace CloudWatchLogPump.Configuration
 
         public static void CoerceConfiguration()
         {
-            DependencyContext.Subscriptions = new Dictionary<string, CalculatedSubscriptionConfiguration>();
+            DependencyContext.RunnerContexts = new Dictionary<string, JobRunnerContext>();
             
             if (DependencyContext.Configuration.Subscriptions.Count > 0)
                 DependencyContext.Configuration.Subscriptions.ForEach(CoerceSubscription);
@@ -91,33 +97,56 @@ namespace CloudWatchLogPump.Configuration
                     config.LogStreamNames = null;
             }
 
-            config.MinIntervalSeconds = Math.Max(config.MinIntervalSeconds, 5);
-            config.MinIntervalSeconds = Math.Min(config.MinIntervalSeconds, 10 * 60);
+            config.ReadMaxBatchSize ??= 10000;
+            config.MinIntervalSeconds ??= 15;
+            config.MaxIntervalSeconds ??= 60;
+            config.ClockSkewProtectionSeconds ??= 15;
+            config.TargetTimeoutSeconds ??= 60;
             
-            config.MaxIntervalSeconds = Math.Max(config.MaxIntervalSeconds, config.MinIntervalSeconds);
-            config.MaxIntervalSeconds = Math.Min(config.MaxIntervalSeconds, 8 * 60 * 60);
+            config.ReadMaxBatchSize = Math.Max(config.ReadMaxBatchSize.Value, 1);
+            config.ReadMaxBatchSize = Math.Min(config.ReadMaxBatchSize.Value, 10000);
+            
+            config.MinIntervalSeconds = Math.Max(config.MinIntervalSeconds.Value, 5);
+            config.MinIntervalSeconds = Math.Min(config.MinIntervalSeconds.Value, 10 * 60);
+            
+            config.MaxIntervalSeconds = Math.Max(config.MaxIntervalSeconds.Value, config.MinIntervalSeconds.Value);
+            config.MaxIntervalSeconds = Math.Min(config.MaxIntervalSeconds.Value, 8 * 60 * 60);
 
+            config.ClockSkewProtectionSeconds = Math.Max(config.ClockSkewProtectionSeconds.Value, 5);
+            config.ClockSkewProtectionSeconds = Math.Min(config.ClockSkewProtectionSeconds.Value, 120);
+            
             config.TargetMaxBatchSize = Math.Max(config.TargetMaxBatchSize, 1);
             
-            DependencyContext.Subscriptions.Add(config.Id, BuildCalculatedSubscriptionConfiguration(config));
+            config.TargetTimeoutSeconds = Math.Max(config.TargetTimeoutSeconds.Value, 1);
+            config.TargetTimeoutSeconds = Math.Min(config.TargetTimeoutSeconds.Value, 15 * 60);
+
+            DependencyContext.RunnerContexts.Add(config.Id, BuildJobRunnerContext(config));
         }
 
-        private static CalculatedSubscriptionConfiguration BuildCalculatedSubscriptionConfiguration(SubscriptionConfiguration config)
+        private static JobRunnerContext BuildJobRunnerContext(SubscriptionConfiguration config)
         {
-            var result = new CalculatedSubscriptionConfiguration
+            var result = new JobRunnerContext
             {
                 Id = config.Id,
                 FilterPattern = config.FilterPattern,
                 TargetUrl = config.TargetUrl,
+                AwsRegion = config.AwsRegion,
                 LogGroupName = config.LogGroupName,
                 LogStreamNames = config.LogStreamNames,
                 LogStreamNamePrefix = config.LogStreamNamePrefix,
-                MinIntervalSeconds = config.MinIntervalSeconds,
-                MaxIntervalSeconds = config.MaxIntervalSeconds,
+                ReadMaxBatchSize = config.ReadMaxBatchSize.GetValueOrDefault(),
+                MinIntervalSeconds = config.MinIntervalSeconds.GetValueOrDefault(),
+                MaxIntervalSeconds = config.MaxIntervalSeconds.GetValueOrDefault(),
+                ClockSkewProtectionSeconds = config.ClockSkewProtectionSeconds.GetValueOrDefault(),
                 TargetMaxBatchSize = config.TargetMaxBatchSize,
                 StartInstant = ParseAbsoluteOrRelativeTime(config.StartTimeIso, config.StartTimeSecondsAgo) ?? InstantUtils.Now,
-                EndInstant = ParseAbsoluteOrRelativeTime(config.EndTimeIso, config.EndTimeSecondsAgo)
+                EndInstant = ParseAbsoluteOrRelativeTime(config.EndTimeIso, config.EndTimeSecondsAgo),
+                AwsClient = new AmazonCloudWatchLogsClient(RegionEndpoint.GetBySystemName(config.AwsRegion)),
+                HttpClient = new HttpClient(),
+                Random = new Random()
             };
+
+            result.HttpClient.Timeout = TimeSpan.FromSeconds(config.TargetTimeoutSeconds.GetValueOrDefault());
             
             return result;
         }

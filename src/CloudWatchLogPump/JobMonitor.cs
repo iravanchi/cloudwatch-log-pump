@@ -17,10 +17,11 @@ namespace CloudWatchLogPump
 
         public void StartAll()
         {
-            DependencyContext.Configuration.Subscriptions.ForEach(Start);
+            foreach (var subscription in DependencyContext.RunnerContexts.Values)
+                Start(subscription);
         }
         
-        public void Start(SubscriptionConfiguration subscription)
+        public void Start(JobRunnerContext subscription)
         {
             Log.Logger.Information("Starting all subscriptions");
             
@@ -28,7 +29,7 @@ namespace CloudWatchLogPump
             runner.Start(null);
         }
 
-        private JobRunner GetOrCreateRunner(SubscriptionConfiguration subscription)
+        private JobRunner GetOrCreateRunner(JobRunnerContext subscription)
         {
             return _runners.GetOrAdd(subscription.Id, _ => new JobRunner(subscription));
         }

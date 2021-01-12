@@ -102,8 +102,8 @@ namespace CloudWatchLogPump
 
         private string Serialize(JobProgress progress)
         {
-            return _instantPattern.Format(progress.CurrentIterationStart) + "|" +
-                   _instantPattern.Format(progress.CurrentIterationEnd) + "|" +
+            return _instantPattern.Format(progress.NextIterationStart) + "|" +
+                   _instantPattern.Format(progress.NextIterationEnd) + "|" +
                    (progress.NextToken ?? string.Empty);
         }
 
@@ -119,13 +119,8 @@ namespace CloudWatchLogPump
 
             if (!start.Success || !end.Success)
                 return null;
-            
-            return new JobProgress
-            {
-                CurrentIterationStart = start.Value,
-                CurrentIterationEnd = end.Value,
-                NextToken = nextToken
-            };
+
+            return new JobProgress(start.Value, end.Value, nextToken);
         }
     }
 }
