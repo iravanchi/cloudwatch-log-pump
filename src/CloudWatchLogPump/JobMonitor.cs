@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿using System;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading.Tasks;
 using Serilog;
@@ -7,7 +8,12 @@ namespace CloudWatchLogPump
 {
     public class JobMonitor
     {
+        private const int MillisToConsiderRunningJobUnresponsive = 20 * 60 * 1000;
+        private const int MillisBetweenReCheckingJobRunners = 30 * 1000;
+
+        private readonly ILogger _logger = Log.Logger.ForContext<JobMonitor>();
         private readonly ConcurrentDictionary<string, JobRunner> _runners;
+        private volatile bool _stopping; // TODO Using a cancellation token makes more sense!
 
         public JobMonitor()
         {
@@ -16,31 +22,97 @@ namespace CloudWatchLogPump
 
         public void StartAll()
         {
-            foreach (var subscription in DependencyContext.RunnerContexts.Values)
-                Start(subscription);
+            if (_stopping)
+                throw new InvalidOperationException("Each instance of JobMonitor can be used once.");
+            
+            StartMonitor();
         }
         
-        private void Start(JobRunnerContext subscription)
-        {
-            Log.Logger.Information("Starting subscription {SubscriptionId}", subscription.Id);
-            
-            var runner = GetOrCreateRunner(subscription);
-            runner.Start(null);
-        }
-
-        private JobRunner GetOrCreateRunner(JobRunnerContext subscription)
-        {
-            return _runners.GetOrAdd(subscription.Id, _ => new JobRunner(subscription));
-        }
-
         public void StopAll()
         {
-            Log.Logger.Information("Stopping all subscriptions");
+            _stopping = true;
+            _logger.Information("Stopping all subscriptions");
             
             var runners = _runners.Values.ToList();
             var stopTasks = runners.Select(r => r.Stop()).Cast<Task>().ToArray();
 
             Task.WaitAll(stopTasks);
+        }
+
+        private void StartMonitor()
+        {
+            Task.Factory.StartNew(MonitorRoot);
+        }
+
+        private async void MonitorRoot()
+        {
+            while (true)
+            {
+                if (_stopping)
+                    return;
+                
+                foreach (var subscription in DependencyContext.RunnerContexts.Values)
+                {
+                    CheckJobLiveliness(subscription);
+                    if (_stopping)
+                        return;
+                }
+                
+                await Task.Delay(MillisBetweenReCheckingJobRunners);
+
+                if (_stopping)
+                    return;
+            }
+        }
+
+        private void CheckJobLiveliness(JobRunnerContext subscription)
+        {
+            if (!_runners.TryGetValue(subscription.Id, out var runner))
+            {
+                _logger.Information("No JobRunner for {SubscriptionId} yet, starting one.");
+                RecycleRunner(subscription);
+                return;
+            }
+
+            if (!runner.Running && !_stopping)
+            {
+                _logger.Warning("JobRunner for {SubscriptionId} appears to be stopped. Recycling.");
+                RecycleRunner(subscription);
+            }
+            
+            if (runner.MillisSinceLastLoop > MillisToConsiderRunningJobUnresponsive)
+            {
+                _logger.Warning("JobRunner for {SubscriptionId} is not responding. Recycling.");
+                RecycleRunner(subscription);
+            }
+        }
+
+        private void RecycleRunner(JobRunnerContext subscription)
+        {
+            // Create a new JobRunner for the subscription anyway.
+            // If there's a runner present, replace it and stop the original one.
+            
+            _runners.AddOrUpdate(subscription.Id,
+                id =>
+                {
+                    // addValueFactory; If the value is not present in the dictionary
+                    var newRunner = new JobRunner(subscription);
+                    newRunner.Start(null);
+                    return newRunner;
+                },
+                (id, runner) =>
+                {
+                    // updateValueFactory; If there is a runner in the dictionary
+
+                    // Stop the currently-running (probably already dead) runner to make sure it doesn't
+                    // come back to life and cause problems
+                    if (runner.Running)
+                        runner.Stop();
+                    
+                    var newRunner = new JobRunner(subscription);
+                    newRunner.Start(null);
+                    return newRunner;
+                });
         }
     }
 }
