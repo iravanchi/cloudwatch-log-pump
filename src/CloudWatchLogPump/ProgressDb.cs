@@ -124,6 +124,9 @@ namespace CloudWatchLogPump
             if (!start.Success || !end.Success)
                 return null;
 
+            if (nextToken.Length == 0)
+                nextToken = null;
+            
             return new JobProgress(start.Value, end.Value, nextToken);
         }
     }
