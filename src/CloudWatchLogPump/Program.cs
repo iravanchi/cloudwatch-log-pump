@@ -60,14 +60,16 @@ namespace CloudWatchLogPump
                 config = config.WriteTo.File(
                     Path.Combine(DependencyContext.Configuration.LogFolderPath, "info-.log"),
                     LogEventLevel.Information, 
-                    rollingInterval: RollingInterval.Day);
+                    rollingInterval: RollingInterval.Day,
+                    outputTemplate: logMessageTemplate);
 
                 if (DependencyContext.Configuration.EnableDebugFileLog)
                 {
                     config = config.WriteTo.File(
                         Path.Combine(DependencyContext.Configuration.LogFolderPath, "debug-.log"),
                         LogEventLevel.Debug, 
-                        rollingInterval: RollingInterval.Day);
+                        rollingInterval: RollingInterval.Day,
+                        outputTemplate: logMessageTemplate);
                 }
             }
 
