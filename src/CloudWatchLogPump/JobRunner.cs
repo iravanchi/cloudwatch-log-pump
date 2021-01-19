@@ -100,7 +100,7 @@ namespace CloudWatchLogPump
                         var finishInstant = InstantUtils.Now;
                         var totalTimeMillis = (int) finishInstant.Minus(startInstant).TotalMilliseconds;
                     
-                        _context.Logger.Information("Iteration done: read {RecordCount,5} records in {ReadTime,4} ms, waited {WaitTime,4} ms, written in {WriteTime,4} ms. Total {TotalTime,5} ms {TotalSize,6} bytes",
+                        _context.Logger.Information("Iteration done: read {RecordCount,5} records in {ReadTime,5} ms, waited {WaitTime,5} ms, written in {WriteTime,5} ms. Total {TotalTime,6} ms {TotalSize,7} bytes",
                             iteration.RecordCount, iteration.ReadTimeMillis, iteration.WaitTimeMillis, iteration.WriteTimeMillis, totalTimeMillis, iteration.SizeBytes);
 
                         if (!thereIsMore)
