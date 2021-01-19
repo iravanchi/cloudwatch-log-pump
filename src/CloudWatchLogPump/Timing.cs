@@ -18,11 +18,18 @@
             public const int MinWaitMillisOnIdle = 500;
         }
 
+        public static class IterationReadCall
+        {
+            public const int InitialWaitRangeMillis = 2000;
+            public const int WaitRangeMultiplier = 2;
+            public const int MaxNumberOfRetries = 5;
+        }
+
         public static class IterationTargetCall
         {
             public const int InitialWaitRangeMillis = 2000;
             public const int WaitRangeMultiplier = 4;
-            public const int MaxWaitRangeMillis = InitialWaitRangeMillis * WaitRangeMultiplier * WaitRangeMultiplier * WaitRangeMultiplier;
+            public const int MaxNumberOfRetries = 4;
         }
     }
 }

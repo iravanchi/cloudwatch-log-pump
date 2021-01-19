@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Amazon.CloudWatchLogs;
 using Amazon.CloudWatchLogs.Model;
 using CloudWatchLogPump.Extensions;
 using CloudWatchLogPump.Model;
@@ -128,8 +129,6 @@ namespace CloudWatchLogPump
         
         private async Task ReadRecords()
         {
-            var beforeRead = InstantUtils.Now;
-            
             var request = new FilterLogEventsRequest()
             {
                 LogGroupName = _context.LogGroupName,
@@ -143,7 +142,7 @@ namespace CloudWatchLogPump
             };
 
             _context.Logger.Debug("Calling AWS API with input {@Request}", request);
-            _readResponse = await _context.AwsClient.FilterLogEventsAsync(request);
+            _readResponse = await ReadRecordsWithExponentialBackoff(request);
             _context.Logger.Debug("AWS API returned {HttpStatusCode} with {RecordCount} records, {ResponseSize} bytes", 
                 _readResponse.HttpStatusCode, _readResponse.Events.Count, _readResponse.ContentLength);
             
@@ -152,9 +151,38 @@ namespace CloudWatchLogPump
 
             RecordCount = _readResponse.Events.Count;
             SizeBytes = (int) _readResponse.ContentLength;
-            
-            var afterRead = InstantUtils.Now;
-            ReadTimeMillis = (int) afterRead.Minus(beforeRead).TotalMilliseconds;
+        }
+
+        private async Task<FilterLogEventsResponse> ReadRecordsWithExponentialBackoff(FilterLogEventsRequest request)
+        {
+            var waitRange = Timing.IterationReadCall.InitialWaitRangeMillis;
+            var tries = 0;
+
+            while (true)
+            {
+                var beforeRead = InstantUtils.Now;
+                try
+                {
+                    return await _context.AwsClient.FilterLogEventsAsync(request);
+                }
+                catch (AmazonCloudWatchLogsException e)
+                {
+                    if (e.ErrorCode != "ThrottlingException")
+                        throw;
+                }
+                finally
+                {
+                    var afterRead = InstantUtils.Now;
+                    ReadTimeMillis += (int) afterRead.Minus(beforeRead).TotalMilliseconds;
+                }
+
+                if (++tries > Timing.IterationReadCall.MaxNumberOfRetries)
+                    throw new ApplicationException("Read from AWC CloudWatchLogs failed after too many retries");
+
+                _context.Logger.Debug("Read blocked by ThrottlingException for {NumRetries} times, retrying", tries);
+                await WaitRandom(waitRange);
+                waitRange *= Timing.IterationReadCall.WaitRangeMultiplier;
+            }
         }
 
         private void PrepareOutput()
@@ -188,6 +216,7 @@ namespace CloudWatchLogPump
         private async Task SendBatch(List<TargetEventModel> batch)
         {
             var waitRange = Timing.IterationTargetCall.InitialWaitRangeMillis;
+            var tries = 0;
             
             while (true)
             {
@@ -208,7 +237,7 @@ namespace CloudWatchLogPump
                 if (!postResult.StatusCode.IsRetryable())
                     throw new ApplicationException("Target write failed with status code " + postResult.StatusCode);
                 
-                if (waitRange > Timing.IterationTargetCall.MaxWaitRangeMillis)
+                if (++tries > Timing.IterationTargetCall.MaxNumberOfRetries)
                     throw new ApplicationException("Target write failed after too many retries, with status code " + postResult.StatusCode);
                 
                 await WaitRandom(waitRange);
