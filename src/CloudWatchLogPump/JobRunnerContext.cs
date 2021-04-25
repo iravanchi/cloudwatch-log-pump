@@ -27,10 +27,12 @@ namespace CloudWatchLogPump
         
         public string TargetUrl { get; set; }
         public int TargetMaxBatchSize { get; set; }
+        public string TargetSubscriptionData { get; set; }
         
         public ILogger Logger { get; set; }
         public AmazonCloudWatchLogsClient AwsClient { get; set; }
         public HttpClient HttpClient { get; set; }
         public Random Random { get; set; }
+        public long NextInputBatchSequence { get; set; }
     }
 }

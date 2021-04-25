@@ -29,6 +29,7 @@ namespace CloudWatchLogPump.Configuration
         public string TargetUrl { get; set; }
         public int? TargetTimeoutSeconds { get; set; }
         public int? TargetMaxBatchSize { get; set; }
+        public string TargetSubscriptionData { get; set; }
 
         public List<SubscriptionConfiguration> Children { get; set; }
 
@@ -63,6 +64,7 @@ namespace CloudWatchLogPump.Configuration
             TargetUrl = TargetUrl.Or(parent.TargetUrl);
             TargetTimeoutSeconds ??= parent.TargetTimeoutSeconds;
             TargetMaxBatchSize ??= parent.TargetMaxBatchSize;
+            TargetSubscriptionData = TargetSubscriptionData.Or(parent.TargetSubscriptionData);
         }
         
         public SubscriptionConfiguration Clone(bool deep)
@@ -91,6 +93,7 @@ namespace CloudWatchLogPump.Configuration
                 TargetUrl = TargetUrl,
                 TargetTimeoutSeconds = TargetTimeoutSeconds,
                 TargetMaxBatchSize = TargetMaxBatchSize,
+                TargetSubscriptionData = TargetSubscriptionData,
                 
                 Children = deep ? Children?.Select(c => c?.Clone(true)).ToList() : Children 
             };

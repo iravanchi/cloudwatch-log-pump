@@ -188,6 +188,9 @@ namespace CloudWatchLogPump
         private void PrepareOutput()
         {
             _outputBatches = new List<List<TargetEventModel>>();
+            var nextInputEventSequence = 1;
+            var nextOutputEventSequence = 1;
+            var nextOutputBatchSequence = 1;
             
             var currentBatch = new List<TargetEventModel>(_context.TargetMaxBatchSize);
             _outputBatches.Add(currentBatch);
@@ -198,10 +201,18 @@ namespace CloudWatchLogPump
                 {
                     currentBatch = new List<TargetEventModel>(_context.TargetMaxBatchSize);
                     _outputBatches.Add(currentBatch);
+                    nextOutputBatchSequence++;
+                    nextOutputEventSequence = 1;
                 }
                 
                 currentBatch.Add(new TargetEventModel
                 {
+                    PumpSubscriptionId = _context.Id,
+                    PumpSubscriptionData = _context.TargetSubscriptionData,
+                    PumpInputBatchSequence = _context.NextInputBatchSequence,
+                    PumpInputEventSequence = nextInputEventSequence,
+                    PumpOutputBatchSequence = nextOutputBatchSequence,
+                    PumpOutputEventSequence = nextOutputEventSequence,
                     CloudWatchRegion = _context.AwsRegion,
                     CloudWatchEventId = inputEvent.EventId,
                     CloudWatchIngestionTime = DateTimeOffset.FromUnixTimeMilliseconds(inputEvent.IngestionTime),
@@ -210,7 +221,12 @@ namespace CloudWatchLogPump
                     CloudWatchLogStream = inputEvent.LogStreamName,
                     CloudWatchMessage = inputEvent.Message
                 });
+
+                nextInputEventSequence++;
+                nextOutputEventSequence++;
             }
+
+            _context.NextInputBatchSequence++;
         }
 
         private async Task SendBatch(List<TargetEventModel> batch)

@@ -134,15 +134,15 @@ namespace CloudWatchLogPump.Configuration
 
         private static void CoerceSubscription(SubscriptionConfiguration config)
         {
-            if (string.IsNullOrWhiteSpace(config.EventFilterPattern))
+            if (config.EventFilterPattern.IsNullOrWhitespace())
                 config.EventFilterPattern = null;
 
-            if (string.IsNullOrWhiteSpace(config.LogStreamNamePrefix))
+            if (config.LogStreamNamePrefix.IsNullOrWhitespace())
                 config.LogStreamNamePrefix = null;
 
-            if (config.LogStreamNames != null)
+            if (config.LogStreamNames.SafeAny())
             {
-                config.LogStreamNames = config.LogStreamNames.Where(sn => !string.IsNullOrWhiteSpace(sn)).ToList();
+                config.LogStreamNames = config.LogStreamNames.Where(sn => sn.HasValue()).ToList();
                 if (!config.LogStreamNames.Any())
                     config.LogStreamNames = null;
             }
@@ -191,12 +191,14 @@ namespace CloudWatchLogPump.Configuration
                 MaxIntervalSeconds = config.MaxIntervalSeconds.GetValueOrDefault(),
                 ClockSkewProtectionSeconds = config.ClockSkewProtectionSeconds.GetValueOrDefault(),
                 TargetMaxBatchSize = config.TargetMaxBatchSize.GetValueOrDefault(),
+                TargetSubscriptionData = config.TargetSubscriptionData,
                 StartInstant = ParseAbsoluteOrRelativeTime(config.StartTimeIso, config.StartTimeSecondsAgo) ?? InstantUtils.Now,
                 EndInstant = ParseAbsoluteOrRelativeTime(config.EndTimeIso, config.EndTimeSecondsAgo),
                 Logger = Log.Logger.ForContext("SubscriptionId", config.Id),
                 AwsClient = new AmazonCloudWatchLogsClient(RegionEndpoint.GetBySystemName(config.AwsRegion)),
                 HttpClient = new HttpClient(),
-                Random = new Random()
+                Random = new Random(),
+                NextInputBatchSequence = 1
             };
 
             result.HttpClient.Timeout = TimeSpan.FromSeconds(config.TargetTimeoutSeconds.GetValueOrDefault());
