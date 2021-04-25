@@ -29,6 +29,46 @@ namespace CloudWatchLogPump.Configuration
             DependencyContext.Configuration = config.Get<RootConfiguration>();
         }
 
+        public static void FlattenSubscriptions()
+        {
+            var originalList = DependencyContext.Configuration.Subscriptions;
+            if (originalList == null || !originalList.Any())
+                return;
+
+            var flattenedList = new List<SubscriptionConfiguration>();
+            foreach (var subscription in originalList)
+            {
+                FlattenSubscriptionItem(flattenedList, null, subscription);
+            }
+
+            DependencyContext.Configuration.Subscriptions = flattenedList;
+        }
+
+        private static void FlattenSubscriptionItem(List<SubscriptionConfiguration> flattenedList, 
+            SubscriptionConfiguration parent, SubscriptionConfiguration item)
+        {
+            var extendedItem = item.Clone(false);
+            extendedItem.ExtendFrom(parent);
+            extendedItem.Children = null;
+
+            if (item.Children.SafeAny())
+            {
+                foreach (var child in item.Children)
+                {
+                    FlattenSubscriptionItem(flattenedList, extendedItem, child);
+                }
+            }
+            else
+            {
+                flattenedList.Add(extendedItem);
+            }
+        }
+
+        public static void ExpandSubscriptionPatterns()
+        {
+            // TODO: Process LogGroupPattern property
+        }
+
         public static void ValidateConfiguration()
         {
             var config = DependencyContext.Configuration;
@@ -46,7 +86,7 @@ namespace CloudWatchLogPump.Configuration
 
         private static void ValidateSubscription(SubscriptionConfiguration config)
         {
-            if (string.IsNullOrWhiteSpace(config.Id))
+            if (config.Id.IsNullOrWhitespace())
                 throw new ArgumentException("Subscription ID is required for all subscriptions.");
 
             if (config.Id.Length > 100)
@@ -55,24 +95,33 @@ namespace CloudWatchLogPump.Configuration
             if (!ConfigurationIdRegex.IsMatch(config.Id))
                 throw new ArgumentException($"Subscription '{config.Id}' - Invalid characters in Subscription ID. Allowed characters are alpha numeric, dash, underscore and dot.");
 
-            if (string.IsNullOrWhiteSpace(config.TargetUrl))
+            if (config.TargetUrl.IsNullOrWhitespace())
                 throw new ArgumentException($"Subscription '{config.Id}' - targetUrl is required to be specified");
 
-            if (string.IsNullOrWhiteSpace(config.AwsRegion))
+            if (config.AwsRegion.IsNullOrWhitespace())
                 throw new ArgumentException($"Subscription '{config.Id}' - awsRegion is required to be specified");
 
-            if (string.IsNullOrWhiteSpace(config.LogGroupName))
+            if (config.LogGroupName.IsNullOrWhitespace())
                 throw new ArgumentException($"Subscription '{config.Id}' - logGroupName is required to be specified");
 
-            if (string.IsNullOrWhiteSpace(config.StartTimeIso) && config.StartTimeSecondsAgo.HasValue)
-            {
-                throw new ArgumentException($"Subscription '{config.Id}' - startTimeIso and startTimeSecondsAgo cannot be specified at the same time. Only one of them allowed to be present in the configuration.");
-            }
+            if (config.LogGroupPattern.HasValue())
+                throw new ArgumentException($"Subscription '{config.Id}' - logGroupPattern should have been expanded at this point and set to null");
 
-            if (string.IsNullOrWhiteSpace(config.EndTimeIso) && config.EndTimeSecondsAgo.HasValue)
+            if (config.LogStreamNames != null &&
+                config.LogStreamNames.SafeAny(lsn => lsn.HasValue()) &&
+                config.LogStreamNamePrefix.HasValue())
             {
-                throw new ArgumentException($"Subscription '{config.Id}' - endTimeIso and endTimeSecondsAgo cannot be specified at the same time. Only one of them allowed to be present in the configuration.");
+                throw new ArgumentException($"Subscription '{config.Id}' - logStreamNames and logStreamNamePrefix fields cannot be specified at the same time. AWS API allows only one of them to be specified in each call.");
             }
+            
+            if (config.StartTimeIso.HasValue() && config.StartTimeSecondsAgo.HasValue)
+                throw new ArgumentException($"Subscription '{config.Id}' - startTimeIso and startTimeSecondsAgo cannot be specified at the same time. Only one of them allowed to be present in the configuration.");
+
+            if (config.EndTimeIso.HasValue() && config.EndTimeSecondsAgo.HasValue)
+                throw new ArgumentException($"Subscription '{config.Id}' - endTimeIso and endTimeSecondsAgo cannot be specified at the same time. Only one of them allowed to be present in the configuration.");
+
+            if (config.Children != null)
+                throw new ArgumentException($"Subscription '{config.Id}' - children need to be flattened in this point and Children property must have been set to null.");
         }
 
         public static void CoerceConfiguration()
@@ -85,8 +134,8 @@ namespace CloudWatchLogPump.Configuration
 
         private static void CoerceSubscription(SubscriptionConfiguration config)
         {
-            if (string.IsNullOrWhiteSpace(config.FilterPattern))
-                config.FilterPattern = null;
+            if (string.IsNullOrWhiteSpace(config.EventFilterPattern))
+                config.EventFilterPattern = null;
 
             if (string.IsNullOrWhiteSpace(config.LogStreamNamePrefix))
                 config.LogStreamNamePrefix = null;
@@ -103,6 +152,7 @@ namespace CloudWatchLogPump.Configuration
             config.MaxIntervalSeconds ??= 60;
             config.ClockSkewProtectionSeconds ??= 15;
             config.TargetTimeoutSeconds ??= 60;
+            config.TargetMaxBatchSize ??= 1;
             
             config.ReadMaxBatchSize = Math.Max(config.ReadMaxBatchSize.Value, 1);
             config.ReadMaxBatchSize = Math.Min(config.ReadMaxBatchSize.Value, 10000);
@@ -116,11 +166,12 @@ namespace CloudWatchLogPump.Configuration
             config.ClockSkewProtectionSeconds = Math.Max(config.ClockSkewProtectionSeconds.Value, 5);
             config.ClockSkewProtectionSeconds = Math.Min(config.ClockSkewProtectionSeconds.Value, 120);
             
-            config.TargetMaxBatchSize = Math.Max(config.TargetMaxBatchSize, 1);
-            
             config.TargetTimeoutSeconds = Math.Max(config.TargetTimeoutSeconds.Value, 1);
             config.TargetTimeoutSeconds = Math.Min(config.TargetTimeoutSeconds.Value, 15 * 60);
 
+            config.TargetMaxBatchSize = Math.Max(config.TargetMaxBatchSize.Value, 1);
+            config.TargetMaxBatchSize = Math.Min(config.TargetMaxBatchSize.Value, 20000);
+            
             DependencyContext.RunnerContexts.Add(config.Id, BuildJobRunnerContext(config));
         }
 
@@ -129,7 +180,7 @@ namespace CloudWatchLogPump.Configuration
             var result = new JobRunnerContext
             {
                 Id = config.Id,
-                FilterPattern = config.FilterPattern,
+                EventFilterPattern = config.EventFilterPattern,
                 TargetUrl = config.TargetUrl,
                 AwsRegion = config.AwsRegion,
                 LogGroupName = config.LogGroupName,
@@ -139,7 +190,7 @@ namespace CloudWatchLogPump.Configuration
                 MinIntervalSeconds = config.MinIntervalSeconds.GetValueOrDefault(),
                 MaxIntervalSeconds = config.MaxIntervalSeconds.GetValueOrDefault(),
                 ClockSkewProtectionSeconds = config.ClockSkewProtectionSeconds.GetValueOrDefault(),
-                TargetMaxBatchSize = config.TargetMaxBatchSize,
+                TargetMaxBatchSize = config.TargetMaxBatchSize.GetValueOrDefault(),
                 StartInstant = ParseAbsoluteOrRelativeTime(config.StartTimeIso, config.StartTimeSecondsAgo) ?? InstantUtils.Now,
                 EndInstant = ParseAbsoluteOrRelativeTime(config.EndTimeIso, config.EndTimeSecondsAgo),
                 Logger = Log.Logger.ForContext("SubscriptionId", config.Id),

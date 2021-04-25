@@ -22,6 +22,8 @@ namespace CloudWatchLogPump
                 configFilePath = args[0];
             
             ConfigurationParser.LoadConfiguration(configFilePath);
+            ConfigurationParser.FlattenSubscriptions();
+            ConfigurationParser.ExpandSubscriptionPatterns();
             
             SetupLogging();
             Log.Logger.Information("Application started.");

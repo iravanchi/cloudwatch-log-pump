@@ -135,7 +135,7 @@ namespace CloudWatchLogPump
                 StartTime = Progress.NextIterationStart.ToUnixTimeMilliseconds(),
                 EndTime = Progress.NextIterationEnd.ToUnixTimeMilliseconds(),
                 NextToken = Progress.NextToken,
-                FilterPattern = _context.FilterPattern,
+                FilterPattern = _context.EventFilterPattern,
                 LogStreamNamePrefix = _context.LogStreamNamePrefix,
                 LogStreamNames = _context.LogStreamNames,
                 Limit = _context.ReadMaxBatchSize

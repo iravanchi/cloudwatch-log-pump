@@ -16,7 +16,7 @@ namespace CloudWatchLogPump
         public Instant StartInstant { get; set; }
         public Instant? EndInstant { get; set; }
         
-        public string FilterPattern { get; set; }
+        public string EventFilterPattern { get; set; }
         public string LogStreamNamePrefix { get; set; }
         public List<string> LogStreamNames { get; set; }
         
