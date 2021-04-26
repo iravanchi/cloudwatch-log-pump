@@ -157,6 +157,7 @@ There can be *any number of nesting levels* in specifying subscriptions.
 |Field name|Type|Default|Description|
 |----|----|----|----|
 |`id`|String, Required, Max 100 chars|`null`|Identifier of the specific log subscription. The `id` is used as a file name to keep progress, and also included in the log output for any message regarding the particular subscription. When used in nested child subscriptions, will be concatenated with parents' `id` using "." as separator.|
+|`enabled`|Boolean, Optional|`true`|Can be used to disable a certain subscription without removing it from configuration. If set to `false`, the configuration will be parsed and all validations are performed, but no worker thread is started for it.|
 |`comments`|String, Optional|`null`|Not used by the application. Can be used to include human-readable comments or documentation about each individual subscription entry.|
 |`awsRegion`|String, Required|`null`|AWS region from which CloudWatch Log entries should be queried for this subscription. Should be standard AWS region codes (eg. `us-west-2` or `ca-central-1`).|
 |`children`|Array, Optional|Empty|Can be used to re-use configuration settings for any number of subscriptions without the need to repeat them. If specified, current subscription entry will not be processed, rather all children of this entry will be treated as subscriptions. Elements of the array are exactly similar to subscription configuration including this very field, which can be used to nest subscriptions to any number of levels.|

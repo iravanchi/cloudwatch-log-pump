@@ -7,6 +7,7 @@ namespace CloudWatchLogPump.Configuration
     public class SubscriptionConfiguration
     {
         public string Id { get; set; }
+        public bool? Enabled { get; set; }
         
         public string Comments { get; set; }
         public string AwsRegion { get; set; }
@@ -41,6 +42,7 @@ namespace CloudWatchLogPump.Configuration
             if (parent.Id.HasValue())
                 Id = Id.HasValue() ? parent.Id + "." + Id : parent.Id;
 
+            Enabled ??= parent.Enabled;
             Comments = Comments.Or(parent.Comments);
             AwsRegion = AwsRegion.Or(parent.AwsRegion);
             LogGroupName = LogGroupName.Or(parent.LogGroupName);
@@ -72,6 +74,7 @@ namespace CloudWatchLogPump.Configuration
             return new SubscriptionConfiguration
             {
                 Id = Id,
+                Enabled = Enabled,
                 Comments = Comments,
                 AwsRegion = AwsRegion,
                 LogGroupName = LogGroupName,

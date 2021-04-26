@@ -203,6 +203,7 @@ namespace CloudWatchLogPump.Configuration
                     config.LogStreamNames = null;
             }
 
+            config.Enabled ??= true;
             config.ReadMaxBatchSize ??= 10000;
             config.MinIntervalSeconds ??= 15;
             config.MaxIntervalSeconds ??= 300;
@@ -228,7 +229,8 @@ namespace CloudWatchLogPump.Configuration
             config.TargetMaxBatchSize = Math.Max(config.TargetMaxBatchSize.Value, 1);
             config.TargetMaxBatchSize = Math.Min(config.TargetMaxBatchSize.Value, 20000);
             
-            DependencyContext.RunnerContexts.Add(config.Id, BuildJobRunnerContext(config));
+            if (config.Enabled.GetValueOrDefault())
+                DependencyContext.RunnerContexts.Add(config.Id, BuildJobRunnerContext(config));
         }
 
         private static JobRunnerContext BuildJobRunnerContext(SubscriptionConfiguration config)
