@@ -205,7 +205,7 @@ namespace CloudWatchLogPump.Configuration
 
             config.ReadMaxBatchSize ??= 10000;
             config.MinIntervalSeconds ??= 15;
-            config.MaxIntervalSeconds ??= 60;
+            config.MaxIntervalSeconds ??= 300;
             config.ClockSkewProtectionSeconds ??= 15;
             config.TargetTimeoutSeconds ??= 60;
             config.TargetMaxBatchSize ??= 1;
