@@ -180,7 +180,7 @@ any errors.
 |Field name|Type|Default|Description|
 |----|----|----|----|
 |`logGroupName`|String|`null`|Specifies the exact name of the log group in CloudWatch Logs to query and fetch events from.|
-|`logGroupPattern`|Regex|`null`|Specifies a pattern, in the form of a regular expression, to match against all log groups of the AWS region to determine which log groups need to be queried for events. Can match any number of log groups.|
+|`logGroupPattern`|Regex|`null`|Specifies a pattern, in the form of a regular expression, to match against all log groups of the AWS region to determine which log groups need to be queried for events. Can match any number of log groups. Matching is case insensitive, and is not limited to full name, so you may want to consider using ^ / $ to match beginning / end of log group name.|
 ||
 
 
