@@ -2,21 +2,26 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using Amazon;
 using Amazon.CloudWatchLogs;
+using Amazon.CloudWatchLogs.Model;
 using CloudWatchLogPump.Extensions;
 using Microsoft.Extensions.Configuration;
 using NodaTime;
 using NodaTime.Text;
 using Serilog;
+using InvalidOperationException = System.InvalidOperationException;
 
 namespace CloudWatchLogPump.Configuration
 {
     public static class ConfigurationParser
     {
         private static readonly Regex ConfigurationIdRegex = new Regex("^[0-9a-zA-Z_\\-\\.]+$");
+        private static readonly Regex ConfigurationIdCleanupRegex = new Regex("[^0-9a-zA-Z_\\-\\.]");
         private static readonly InstantPattern InstantPattern = InstantPattern.General;
         
         public static void LoadConfiguration(string configFilePath)
@@ -64,9 +69,60 @@ namespace CloudWatchLogPump.Configuration
             }
         }
 
-        public static void ExpandSubscriptionPatterns()
+        public static async Task ExpandSubscriptionPatterns()
         {
-            // TODO: Process LogGroupPattern property
+            var originalList = DependencyContext.Configuration.Subscriptions;
+            if (originalList == null || !originalList.Any())
+                return;
+
+            var expandedList = new List<SubscriptionConfiguration>();
+            foreach (var subscription in originalList)
+            {
+                if (subscription.LogGroupPattern.HasValue())
+                    expandedList.AddRange(await ExpandSubscriptionPattern(subscription));
+                else
+                    expandedList.Add(subscription);
+            }
+
+            DependencyContext.Configuration.Subscriptions = expandedList;
+        }
+
+        private static async Task<List<SubscriptionConfiguration>> ExpandSubscriptionPattern(SubscriptionConfiguration originalSubscription)
+        {
+            var cw = new AmazonCloudWatchLogsClient(RegionEndpoint.GetBySystemName(originalSubscription.AwsRegion));
+            var regex = new Regex(originalSubscription.LogGroupPattern);
+            var expandedList = new List<SubscriptionConfiguration>();
+            var nextToken = (string) null;
+            
+            do
+            {
+                var response = await cw.DescribeLogGroupsAsync(new DescribeLogGroupsRequest {NextToken = nextToken});
+                if (response.HttpStatusCode != HttpStatusCode.OK)
+                    throw new InvalidOperationException($"Subscription '{originalSubscription.Id}' - " +
+                                                        $"Could not query AWS CloudWatch Logs for list of log groups");
+
+                nextToken = response.NextToken;
+                foreach (var logGroup in response.LogGroups.OrEmpty())
+                {
+                    if (!regex.IsMatch(logGroup.LogGroupName))
+                        continue;
+
+                    var clonedSubscription = originalSubscription.Clone(false);
+                    clonedSubscription.LogGroupPattern = null;
+                    clonedSubscription.LogGroupName = logGroup.LogGroupName;
+                    clonedSubscription.Id += "." + ConfigurationIdCleanupRegex.Replace(logGroup.LogGroupName, "_");
+                    expandedList.Add(clonedSubscription);
+                }
+            } 
+            while (nextToken.HasValue());
+
+            Log.Logger.Information(
+                "Expanded {OriginalId} into {ExpandedCount} subscriptions for log groups: {ExpandedList}",
+                originalSubscription.Id,
+                expandedList.Count,
+                string.Join(", ", expandedList.Select(s => s.LogGroupName)));
+            
+            return expandedList;
         }
 
         public static void ValidateConfiguration()
