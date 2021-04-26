@@ -90,7 +90,7 @@ namespace CloudWatchLogPump.Configuration
         private static async Task<List<SubscriptionConfiguration>> ExpandSubscriptionPattern(SubscriptionConfiguration originalSubscription)
         {
             var cw = new AmazonCloudWatchLogsClient(RegionEndpoint.GetBySystemName(originalSubscription.AwsRegion));
-            var regex = new Regex(originalSubscription.LogGroupPattern);
+            var regex = new Regex(originalSubscription.LogGroupPattern, RegexOptions.IgnoreCase);
             var expandedList = new List<SubscriptionConfiguration>();
             var nextToken = (string) null;
             
